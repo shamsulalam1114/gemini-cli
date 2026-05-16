@@ -85,6 +85,47 @@ describe('policy/utils', () => {
       expect(result).toEqual(['"command":"rm -rf .*']);
     });
 
+    it('should strip leading ^ from commandRegex to anchor to command value start', () => {
+      // A leading '^' is broken in the raw JSON context because `"command":"` is
+      // prepended, making it impossible to match. Stripping '^' is semantically
+      // equivalent: the prefix already anchors to the start of the command value.
+      const result = buildArgsPatterns(undefined, undefined, '^git status');
+      expect(result).toEqual(['"command":"git status']);
+      const regex = new RegExp(result[0]!);
+      // Should match commands that start with "git status"
+      expect(regex.test('{"command":"git status"}')).toBe(true);
+      expect(regex.test('{"command":"git status --all"}')).toBe(true);
+      // Should NOT match commands that contain "git status" elsewhere
+      expect(regex.test('{"command":"not git status"}')).toBe(false);
+    });
+
+    it('should replace trailing $ in commandRegex to anchor to end of command value', () => {
+      // A trailing '$' would match end-of-JSON-string (after '}'), not end of
+      // the command value. Replace it with (?=") to anchor to the closing quote.
+      const result = buildArgsPatterns(undefined, undefined, 'git status$');
+      expect(result).toEqual(['"command":"git status(?=")']);
+      const regex = new RegExp(result[0]!);
+      expect(regex.test('{"command":"git status"}')).toBe(true);
+      // Should NOT match when extra args are appended
+      expect(regex.test('{"command":"git status --all"}')).toBe(false);
+    });
+
+    it('should handle commandRegex with both ^ and $ anchors', () => {
+      const result = buildArgsPatterns(undefined, undefined, '^git status$');
+      expect(result).toEqual(['"command":"git status(?=")']);
+      const regex = new RegExp(result[0]!);
+      // Exact match only
+      expect(regex.test('{"command":"git status"}')).toBe(true);
+      expect(regex.test('{"command":"git status --all"}')).toBe(false);
+      expect(regex.test('{"command":"not git status"}')).toBe(false);
+    });
+
+    it('should preserve escaped \\$ (literal dollar sign) in commandRegex', () => {
+      // \$ means a literal '$' in the command, not an anchor.
+      const result = buildArgsPatterns(undefined, undefined, 'echo \\$HOME');
+      expect(result).toEqual(['"command":"echo \\$HOME']);
+    });
+
     it('should prioritize commandPrefix over commandRegex and argsPattern', () => {
       const result = buildArgsPatterns('raw', 'prefix', 'regex');
       expect(result).toEqual(['\\"command\\":\\"prefix(?:[\\s"]|\\\\")']);

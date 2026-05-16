@@ -170,7 +170,12 @@ priority = 100
       expect(result.errors).toHaveLength(0);
     });
 
-    it('should NOT match if ^ is used in commandRegex because it matches against full JSON', async () => {
+    it('should correctly handle ^ anchor in commandRegex to match start of command value', async () => {
+      // Previously, '^' in commandRegex was broken: the builder prepended
+      // `"command":"`, making the resulting pattern `"command":"^git status`
+      // impossible to satisfy ('^' requires start-of-string, but content already
+      // precedes it). The fix strips '^' so the `"command":"` prefix naturally
+      // anchors to the start of the command value.
       const result = await runLoadPoliciesFromToml(`
 [[rule]]
 toolName = "run_shell_command"
@@ -180,10 +185,16 @@ priority = 100
 `);
 
       expect(result.rules).toHaveLength(1);
-      // The generated pattern is "command":"^git status
-      // This will NOT match '{"command":"git status"}' because of the '{"' at the start.
+      // Should now correctly match commands starting with "git status"
       expect(
         result.rules[0].argsPattern?.test('{"command":"git status"}'),
+      ).toBe(true);
+      expect(
+        result.rules[0].argsPattern?.test('{"command":"git status --all"}'),
+      ).toBe(true);
+      // Should NOT match commands that don't start with "git status"
+      expect(
+        result.rules[0].argsPattern?.test('{"command":"not git status"}'),
       ).toBe(false);
       expect(result.errors).toHaveLength(0);
     });

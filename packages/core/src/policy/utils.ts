@@ -83,7 +83,27 @@ export function buildArgsPatterns(
   }
 
   if (commandRegex) {
-    return [`"command":"${commandRegex}`];
+    // The user's commandRegex is expected to match against the command string
+    // value, not the full JSON representation (e.g. `{"command":"git status"}`).
+    //
+    // A leading '^' anchor is semantically broken in this context: because we
+    // prepend `"command":"`, the resulting pattern `"command":"^git status`
+    // requires '^' to match after non-empty content, which is impossible in
+    // standard regex. We strip '^' so that the `"command":"` prefix naturally
+    // anchors the match to the start of the command value.
+    //
+    // A trailing '$' anchor is similarly broken: it would need to match the end
+    // of the full JSON string (ending in `}`), not the end of the command value.
+    // We replace it with `(?=")` so it anchors to the closing quote that
+    // terminates the command value in the JSON string.
+    let adjusted = commandRegex;
+    if (adjusted.startsWith('^')) {
+      adjusted = adjusted.slice(1);
+    }
+    if (adjusted.endsWith('$') && !adjusted.endsWith('\\$')) {
+      adjusted = adjusted.slice(0, -1) + '(?=")';
+    }
+    return [`"command":"${adjusted}`];
   }
 
   return [argsPattern];
